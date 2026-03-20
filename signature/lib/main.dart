@@ -2,6 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+// Web-only download helper
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -52,13 +57,26 @@ class _SignatureScreenState extends State<SignatureScreen> {
         final csvHeader = 'Name,Email,Timestamp,SignatureBase64';
         final csvRows = _submittedData.map((row) => '"${row['name']}","${row['email']}","${row['timestamp']}","${row['signatureBase64']}"').join('\n');
         final csvContent = '$csvHeader\n$csvRows';
-        final Directory dir = await getApplicationDocumentsDirectory();
         final String safeTimestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-        final File csvFile = File('${dir.path}/dashboard-signatures-$safeTimestamp.csv');
-        await csvFile.writeAsString(csvContent, flush: true);
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Dashboard CSV saved to ${csvFile.path}')),
-        );
+        final String fileName = 'dashboard-signatures-$safeTimestamp.csv';
+        if (kIsWeb) {
+            final blob = html.Blob([csvContent]);
+            final url = html.Url.createObjectUrlFromBlob(blob);
+            final anchor = html.AnchorElement(href: url)
+                ..setAttribute('download', fileName)
+                ..click();
+            html.Url.revokeObjectUrl(url);
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('CSV download started (web)')),
+            );
+        } else {
+            final Directory dir = await getApplicationDocumentsDirectory();
+            final File csvFile = File('${dir.path}/$fileName');
+            await csvFile.writeAsString(csvContent, flush: true);
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Dashboard CSV saved to ${csvFile.path}')),
+            );
+        }
     }
 
     void _onItemTapped(int index) {
@@ -203,12 +221,22 @@ class _SignaturePadPageState extends State<SignaturePadPage> {
             final Uint8List pngBytes = await _captureSignaturePng();
             final String timestamp = DateTime.now().toIso8601String();
             final String safeTimestamp = timestamp.replaceAll(':', '-');
-            final Directory dir = await getApplicationDocumentsDirectory();
+            final String fileName = 'digital-signature-$safeTimestamp.png';
 
-            final File pngFile = File(
-                '${dir.path}/digital-signature-$safeTimestamp.png',
-            );
-            await pngFile.writeAsBytes(pngBytes, flush: true);
+            if (kIsWeb) {
+                final blob = html.Blob([pngBytes]);
+                final url = html.Url.createObjectUrlFromBlob(blob);
+                final anchor = html.AnchorElement(href: url)
+                  ..setAttribute('download', fileName)
+                  ..click();
+                html.Url.revokeObjectUrl(url);
+                _showMessage('Signature PNG download started (web)');
+            } else {
+                final Directory dir = await getApplicationDocumentsDirectory();
+                final File pngFile = File('${dir.path}/$fileName');
+                await pngFile.writeAsBytes(pngBytes, flush: true);
+                _showMessage('Signature PNG saved to ${dir.path}');
+            }
 
             final String signatureBase64 = base64Encode(pngBytes);
 
@@ -223,9 +251,8 @@ class _SignaturePadPageState extends State<SignaturePadPage> {
             }
 
             setState(() {
-                _status = 'Signature saved and sent to dashboard! PNG: digital-signature-$safeTimestamp.png';
+                _status = 'Signature saved and sent to dashboard!';
             });
-            _showMessage('Signature sent to dashboard and PNG saved to ${dir.path}');
         } catch (e) {
             setState(() {
                 _status = 'Error saving files: $e';
