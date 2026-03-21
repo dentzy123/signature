@@ -1,15 +1,37 @@
-# Flutter Signature App Fix Progress
+# iOS App Release TODO - Progress Update
 
-## Steps to Complete (from approved plan):
+✅ **Preparations Started**
 
-- [x] Step 1: Add missing private methods (_showMessage, _captureSignaturePng, _generateCsv) to _SignatureScreenState in lib/main.dart
-- [x] Step 2: Fix _submitSignature() - complete logic, add proper try-catch for file ops, move outside build()
-- [x] Step 3: Restructure build() method - single clean widget tree, remove duplicates/syntax errors (trailing commas, extra ), ])
-- [x] Step 4: Update logo asset path to match actual file
-- [x] Step 5: Verify full file structure, no unmatched braces
-- [x] Step 6: Test compilation (`flutter analyze` or `flutter run`) and functionality (draw sig, submit, check files saved)
+### 1. Preparations & Edits
+- [x] Created TODO.md with plan steps
+- [ ] pubspec.yaml: Bump version (pending version input, default 1.0.1+1)
+- [ ] ios/Runner.xcodeproj/project.pbxproj: Update PRODUCT_BUNDLE_IDENTIFIER=\"com.example.signature\" → user bundle ID (pending Team ID/bundle ID)
+- [ ] `flutter pub get` (run after edits)
 
-**Current Progress:** Starting Step 1.
+### 2. Apple Developer Setup (Manual - Where to find Team ID?)
+- Enroll/sign in: https://developer.apple.com/account
+- Team ID: After enrolling, go to Membership tab: 10-character alphanumeric (e.g. ABCDE1234F)
+  - If no account: Pay $99/year first.
+- Register App ID: Certificates > Identifiers > (+)
+- Bundle ID: Use reverse domain like com.[yourname].signatures
+- Provisioning Profile: Certificates > Profiles > (+), App Store type
 
-**Notes:** Edit lib/main.dart iteratively using edit_file for precise changes. Update this file after each step.
+### 3. Mac + Xcode Required (Confirmed?)
+- `cd ios && open Runner.xcworkspace`
+- Runner target > Signing: Select Team, profile
+- Product > Archive → Organizer > Distribute App → App Store Connect
 
+### 4. Commands to Run
+```
+flutter clean
+flutter pub get
+flutter build ios --release
+```
+
+### Pending User Input
+- Team ID (10-char)
+- Bundle ID (e.g. com.dcurt.signatures)
+- Version (e.g. 1.0.1+1)
+- Mac/Xcode ready? (Windows can't archive iOS)
+
+**Status:** Waiting for details to edit files. Reply with info to proceed! 
