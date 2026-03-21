@@ -9,42 +9,70 @@ import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:signature/signature.dart';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '_info_row.dart';
 import 'web_download_helper.dart' if (dart.library.html) 'web_download_helper.dart' if (dart.library.io) 'web_download_helper_stub.dart';
 
+
 void main() {
-  runApp(const SignatureApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const AppEntry());
 }
 
-class SignatureApp extends StatelessWidget {
-  const SignatureApp({super.key});
+class AppEntry extends StatefulWidget {
+  const AppEntry({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Digital Signature Pad',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
-      home: const SignatureScreen(),
-    );
-  }
+  State<AppEntry> createState() => _AppEntryState();
 }
 
-class SignatureScreen extends StatefulWidget {
-  const SignatureScreen({super.key});
-
-  @override
-  State<SignatureScreen> createState() => _SignatureScreenState();
-}
-
-class _SignatureScreenState extends State<SignatureScreen> {
-  int _selectedIndex = 1; // 0: Home, 1: Signature, 2: Settings
-
-  // Store all submitted signature data in memory
+class _AppEntryState extends State<AppEntry> {
+  int _selectedIndex = 0;
   final List<Map<String, String>> _submittedData = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeFirebaseAndLoad();
+  }
+
+  Future<void> _initializeFirebaseAndLoad() async {
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } catch (_) {
+      // Firebase already initialized or error
+    }
+    await _loadSignaturesFromFirestore();
+    setState(() {
+      _loading = false;
+    });
+  }
+
+  Future<void> _loadSignaturesFromFirestore() async {
+    try {
+      final querySnapshot = await FirebaseFirestore.instance.collection('signatures').orderBy('timestamp', descending: true).get();
+      final List<Map<String, String>> loaded = querySnapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'name': data['name']?.toString() ?? '',
+          'position': data['position']?.toString() ?? '',
+          'timestamp': data['timestamp']?.toString() ?? '',
+          'signatureBase64': data['signatureBase64']?.toString() ?? '',
+        };
+      }).toList();
+      setState(() {
+        _submittedData.clear();
+        _submittedData.addAll(loaded);
+      });
+    } catch (e) {
+      // Optionally show error
+    }
+  }
 
   void _addSignatureData(Map<String, String> data) {
     setState(() {
@@ -82,34 +110,50 @@ class _SignatureScreenState extends State<SignatureScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
     final List<Widget> _pages = <Widget>[
       HomePage(
         submittedData: _submittedData,
         onDownloadCsv: _downloadAllCsv,
       ),
-      const SignaturePadPage(),
+      SignaturePadPage(
+        onSignatureSubmitted: (data) {
+          _addSignatureData(data);
+          _onItemTapped(0); // Go to dashboard after submit
+        },
+      ),
       const SettingsPage(),
     ];
-    return Scaffold(
-      body: _pages[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.edit),
-            label: 'Signature',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: Colors.blue,
-        onTap: _onItemTapped,
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: _pages[_selectedIndex],
+        bottomNavigationBar: BottomNavigationBar(
+          items: const <BottomNavigationBarItem>[
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.edit),
+              label: 'Signature',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.settings),
+              label: 'Settings',
+            ),
+          ],
+          currentIndex: _selectedIndex,
+          selectedItemColor: Colors.blue,
+          onTap: _onItemTapped,
+        ),
       ),
     );
   }
@@ -117,7 +161,8 @@ class _SignatureScreenState extends State<SignatureScreen> {
 
 // SignaturePadPage is the original signature UI, refactored as a separate widget
 class SignaturePadPage extends StatefulWidget {
-  const SignaturePadPage({super.key});
+  final void Function(Map<String, String>)? onSignatureSubmitted;
+  const SignaturePadPage({super.key, this.onSignatureSubmitted});
 
   @override
   State<SignaturePadPage> createState() => _SignaturePadPageState();
@@ -125,8 +170,7 @@ class SignaturePadPage extends StatefulWidget {
 
 class _SignaturePadPageState extends State<SignaturePadPage> {
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-    final TextEditingController _positionController = TextEditingController();
+  final TextEditingController _positionController = TextEditingController();
   late SignatureController _signatureController;
   String _status = 'Draw your signature on the pad above 👆';
 
@@ -146,6 +190,7 @@ class _SignaturePadPageState extends State<SignaturePadPage> {
   void dispose() {
     _nameController.dispose();
     _positionController.dispose();
+    _signatureController.dispose();
     super.dispose();
   }
 
@@ -230,47 +275,42 @@ class _SignaturePadPageState extends State<SignaturePadPage> {
       final String xlsxFileName = 'signature-$safeTimestamp.xlsx';
 
       if (kIsWeb) {
-        // Download PNG
         downloadFileWeb(String.fromCharCodes(pngBytes), pngFileName);
-
-        // For Excel on web, create bytes and download
         final xlsio.Workbook workbook = xlsio.Workbook();
         final xlsio.Worksheet sheet = workbook.worksheets[0];
         sheet.getRangeByName('A1').setText('Signature');
-        // Use HYPERLINK formula so Excel will show a clickable link to the PNG filename
         sheet.getRangeByName('B1').setFormula('=HYPERLINK("$pngFileName","View Signature")');
         final List<int> xlsxBytes = workbook.saveAsStream();
         workbook.dispose();
         downloadFileWeb(String.fromCharCodes(Uint8List.fromList(xlsxBytes)), xlsxFileName);
-
         _showMessage('PNG and Excel downloaded (web)');
       } else {
         final Directory dir = await getApplicationDocumentsDirectory();
         final File pngFile = File('${dir.path}/$pngFileName');
         await pngFile.writeAsBytes(pngBytes, flush: true);
-
-        // Create Excel with hyperlink to PNG
         final xlsio.Workbook workbook = xlsio.Workbook();
         final xlsio.Worksheet sheet = workbook.worksheets[0];
         sheet.getRangeByName('A1').setText('Signature for $name');
-        // Use HYPERLINK formula with file URI so Excel can open the local file
         final fileUri = 'file:///${pngFile.path.replaceAll('\\', '/')}';
         sheet.getRangeByName('B1').setFormula('=HYPERLINK("$fileUri","View Signature")');
         final List<int> xlsxBytes = workbook.saveAsStream();
         workbook.dispose();
-
         final File xlsxFile = File('${dir.path}/$xlsxFileName');
         await xlsxFile.writeAsBytes(xlsxBytes, flush: true);
-
         _showMessage('PNG saved: ${pngFile.path}\nExcel saved: ${xlsxFile.path}');
       }
 
       final String signatureBase64 = base64Encode(pngBytes);
 
-      // Find parent SignatureScreen state and add to dashboard
-      final _SignatureScreenState? parentState = context.findAncestorStateOfType<_SignatureScreenState>();
-      if (parentState != null) {
-        parentState._addSignatureData({
+      await FirebaseFirestore.instance.collection('signatures').add({
+        'name': name,
+        'position': position,
+        'timestamp': timestamp,
+        'signatureBase64': signatureBase64,
+      });
+
+      if (widget.onSignatureSubmitted != null) {
+        widget.onSignatureSubmitted!({
           'name': name,
           'position': position,
           'timestamp': timestamp,
@@ -279,55 +319,61 @@ class _SignaturePadPageState extends State<SignaturePadPage> {
       }
 
       setState(() {
-        _status = 'PNG, Excel (with hyperlink), and dashboard updated!';
+        _status = 'Signature submitted!';
       });
-
-      _nameController.clear();
-      _positionController.clear();
+      _clearSignature();
     } catch (e) {
       setState(() {
-        _status = 'Error saving files: $e';
+        _status = 'Error: $e';
       });
-      _showMessage('Failed to save: $e');
+      _showMessage('Error: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF9EE37D),
-            Color(0xFF3CB6E3),
-          ],
+    return Scaffold(
+      // No AppBar here
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF9EE37D),
+              Color(0xFF3CB6E3),
+            ],
+          ),
         ),
-      ),
-      child: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const SizedBox(height: 12),
               Center(
-                child: Image.asset(
-                  'assets/images/icon.png',
-                  width: 70,
-                  height: 70,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'GAC Qualivaxx',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
+                child: Column(
+                  children: [
+                    Image.asset(
+                      'assets/images/icon.png',
+                      width: 90,
+                      height: 90,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'GAC Qualivaxx',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                        letterSpacing: 1.2,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 18),
@@ -337,66 +383,58 @@ class _SignaturePadPageState extends State<SignaturePadPage> {
                 backgroundColor: Colors.white,
               ),
               const SizedBox(height: 20),
-              Align(
-                alignment: Alignment.center,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    TextField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Your Name',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _positionController,
-                      keyboardType: TextInputType.text,
-                      decoration: const InputDecoration(
-                        labelText: 'Your Position',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _clearSignature,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                            ),
-                            child: const Text('Clear'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _submitSignature,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              foregroundColor: Colors.white,
-                            ),
-                            child: const Text('Submit & Save Signature'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    if (_status.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade200,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(_status),
-                      ),
-                  ],
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Your Name',
+                  border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _positionController,
+                keyboardType: TextInputType.text,
+                decoration: const InputDecoration(
+                  labelText: 'Your Position',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _clearSignature,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF3CB6E3),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Clear'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _submitSignature,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF9EE37D),
+                        foregroundColor: Colors.black,
+                      ),
+                      child: const Text('Submit & Save Signature'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_status.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.85),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(_status),
+                ),
             ],
           ),
         ),
@@ -602,7 +640,7 @@ class HomePage extends StatelessWidget {
                           style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
                         ),
                         subtitle: Text(
-                          'Position:  9${row['position'] ?? ''}\nTime: ${row['timestamp'] ?? ''}',
+                                      'Position: ${row['position'] ?? ''}\nTime: ${row['timestamp'] ?? ''}',
                           style: const TextStyle(color: Colors.black87),
                         ),
                         isThreeLine: true,

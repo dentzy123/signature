@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "892795517944",
+    "firebase_url": "https://signature-3d376-default-rtdb.firebaseio.com",
+    "project_id": "signature-3d376",
+    "storage_bucket": "signature-3d376.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:892795517944:android:b824c95055d595eaa5340d",
+        "androida_client_info": {
+          "package_name": "com.GAC.signature"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCGS_UmJZdVBmGELTDoVDAeheIUQBPOYcA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
